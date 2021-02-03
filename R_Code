@@ -1,0 +1,548 @@
+#####Packages required#####
+library(ape)
+library(asnipe)
+library(igraph)
+library(vegan)
+library(effsize)
+library(ggplot2)
+library(data.table)
+
+#####NOTE: If not specified all codes are those used for Sonso community data, all these codes were used for the Waibira community (including Waibira_A and Waibira_B separately) as well but are not included to save space#####
+
+#####Mantel tests: comparing the overall network structure across years#####
+
+#upload group by individual (gbi) data for each year separately (Figures included in Supplemenatary Material)
+sgbi15<-as.matrix (read.csv(file.choose(),header = FALSE))#use sgbi2015.csv/wgbi2015.csv
+sgbi16<-as.matrix (read.csv(file.choose(),header = FALSE))#use sgbi2016.csv/wgbi2016.cs
+sgbi17<-as.matrix (read.csv(file.choose(),header = FALSE))#use sgbi2017.csv/wgbi2017.cs
+sgbi18<-as.matrix (read.csv(file.choose(),header = FALSE))#use sgbi2018.csv/wgbi2018.cs
+
+#transpose to get into correct format
+sgbi2015<-t(sgbi15)
+sgbi2016<-t(sgbi16)
+sgbi2017<-t(sgbi17)
+sgbi2018<-t(sgbi18)
+
+#create network object for each year
+networks2015<- get_network(association_data=sgbi2015, data_format="GBI")
+networks2016<- get_network(association_data=sgbi2016, data_format="GBI")
+networks2017<- get_network(association_data=sgbi2017, data_format="GBI")
+networks2018<- get_network(association_data=sgbi2018, data_format="GBI")
+
+#get adjacency graph for simple ratio network
+nets2015<-graph.adjacency(networks2015, mode="undirected", weighted=TRUE, diag=FALSE)
+nets2016<-graph.adjacency(networks2016, mode="undirected", weighted=TRUE, diag=FALSE)
+nets2017<-graph.adjacency(networks2017, mode="undirected", weighted=TRUE, diag=FALSE)
+nets2018<-graph.adjacency(networks2018, mode="undirected", weighted=TRUE, diag=FALSE)
+
+#run and plot Mantel tests (figure in supplementary materials also include the plots for Waibira)
+par(mfrow=c(4,3))
+mants1<-mantel.test(networks2015,networks2016, nperm=1000, graph = T, alternative = "greater",main="a) 2015/2016")
+mants2<-mantel.test(networks2015,networks2017, nperm=1000, graph = T, alternative = "greater",main="b) 2015/2017")
+mants3<-mantel.test(networks2015,networks2018, nperm=1000, graph = T, alternative = "greater",main="c) 2015/2018")
+mants4<-mantel.test(networks2016,networks2017, nperm=1000, graph = T, alternative = "greater",main="d) 2016/2017")
+mants5<-mantel.test(networks2016,networks2018, nperm=1000, graph = T, alternative = "greater",main="e) 2016/2018")
+mants6<-mantel.test(networks2017,networks2018, nperm=1000, graph = T, alternative = "greater",main="f) 2017/2018")
+
+#####Create full network objects and random networks for null models for each community#####
+
+#upload the gbi data (used multiple files because of column limit in excel) 
+#for Waibira (full) used files wgbi1.csv & wgbi2_csv/ Waibira_A use wa_gbi1.csv & wa_gbi2.csv/ Waibira_B use wb_gbi1.csv & wb_gbi2.csv
+sgbi1<-as.matrix(read.csv(file.choose(),header=FALSE))#used file sgbi1.csv
+sgbi2<-as.matrix(read.csv(file.choose(),header=FALSE))#used file sgbi2.csv
+sgbi3<-as.matrix(read.csv(file.choose(),header=FALSE))#used file sgbi2.csv
+sgbi<-cbind(sgbi1,sgbi2,sgbi3) #combine the group by individual data 
+sgbi<-as.matrix(sgbi) #convert to matrix
+Sonso<-t(sgbi)#transpose to get the correct format
+
+#upload attributes for each individual
+Sattributes<-read.csv(file.choose(),header = TRUE)#use Sattributes.csv/ Wattributes.csv
+#define columns of gbi data by indiviual ID
+colnames(Sonso)<-Sattributes$ID
+
+#create network object
+networkS<- get_network(association_data=Sonso, data_format="GBI")
+
+#build adjacency graph for simple ratio network
+netS<-graph.adjacency(networkS, mode="undirected", weighted=TRUE, diag=FALSE)
+
+#create random networks through data stream permutation
+permutations<-1000 #use 1000 permutations
+randomS <- network_permutation(Sonso, association_matrix=networkS, permutations=permutations)
+
+
+#####Calculate network measures and compare with random/null networks
+
+#transitivity 
+obsSt<-transitivity(netS)
+
+	#create object that holds results for all the random networks
+random.St<-rep(NA, 1000)
+for (i in 1:1000){
+  net.r<-graph.adjacency(randomS[i,,], mode="undirected", weighted=TRUE, diag=FALSE)
+  random.St[i] <- transitivity(net.r)} 
+  
+  #plot histogram of results from random networks with observed result in as red line
+hist(random.St, breaks=1,col="grey", main = "Sonso", xlab = "Transitivity")
+abline(v=obsSt, col="red")#add line for observed measure
+
+	#compare results from random and observed networks
+sum(random.St >= obsSt)/1000
+sum(random.St <= obsSt)/1000
+
+#mean strength 
+obsSstr<-mean(strength(netS))
+
+	#create object that holds results for all the random networks
+random.Sstr<-rep(NA, 1000)
+for (i in 1:1000){
+  net.r<-graph.adjacency(randomS[i,,], mode="undirected", weighted=TRUE, diag=FALSE)
+  random.Sstr[i] <- mean(strength(net.r))} 
+  
+	 #plot histogram of results from random networks with observed result in as red line
+hist(random.Sstr, breaks=50,col="grey", main = "Sonso", xlab = "Mean Strength")
+abline(v=obsSstr, col="red")
+
+	#compare results from random and observed networks
+sum(random.Sstr >= obsSstr)/1000
+sum(random.Sstr <= obsSstr)/1000
+
+#modularity 
+clusS<- cluster_louvain(netS) #calculate clusterng algorithm (Louavain's)
+obsmodS<-modularity(clusS) #calculate modularity
+
+	#create object that holds results for all the random networks
+random.modS<-rep(NA, 1000)
+for (i in 1:1000){
+  net.r<-graph.adjacency(randomS[i,,], mode="undirected", weighted=TRUE, diag=FALSE)
+  clus<- cluster_louvain(net.r)
+  random.modS[i] <- modularity(clus)} 
+  
+	#plot histogram of results from random networks with observed result in as red line
+hist(random.modS, breaks=50,col="grey", main = "Waibira", xlab = "Modularity")
+abline(v=obsmodS, col="red")
+
+	#compare results from random and observed networks
+sum(random.modS >= obsmodS)/1000
+sum(random.modS <= obsmodS)/1000
+
+
+#####Create object that capture the deviation of observed measure from the null/random networks for each observed network measure#####
+
+#mean strength
+Sstr.Rdiff<-rep(NA, 1000)
+for (i in 1:1000){
+  net.r<-graph.adjacency(randomS[i,,], mode="undirected", weighted=TRUE, diag=FALSE)
+  Sstr.Rdiff[i] <- abs(obsSstr-mean(strength(net.r)))} 
+  
+  #modularity
+  modS.Rdiff<-rep(NA, 1000)
+for (i in 1:1000){
+  net.r<-graph.adjacency(randomS[i,,], mode="undirected", weighted=TRUE, diag=FALSE)
+  clus<- cluster_louvain(net.r)
+  modS.Rdiff[i] <- abs(obsmodS-modularity(clus))} 
+
+#####comparison of deviations from random networks between communities using t.est and Cohen's D #####
+
+#t.test 
+t.test(Sstr.Rdiff,Wstr.Rdiff) #comparison of Sonso vs Waibira mean strength - this was replicated for Sonso vs Waibira_A  and Sonso vs Waibira_B and for modularity across each combination Sonso and Waibira or Waibira subgroup
+
+#Cohen's D to measure effect size
+
+#Note 1: First we had to rearrange the data obtained from calculating the deviations into one data frame by creating a separate data frame for each community of subgroup (Waibira_A/B) and then combining the data frames from each two communities (or community and subgroup) that we wanted to compare.
+
+#NOTE 2: Here we include only one example of each step, however, each of these steps was repeated for each combination of communities/ community vs subgroup that was compared and for each of the two network measures mean Strengtha and Modularity.
+	
+	#e.g. creating data frame
+S<-as.data.frame(Sstr.Rdiff) #define as data frame (here we first used mean strength and later add modularity as another column but this order is not important)
+S$Group<-"Sonso" #create an extra column including the group name
+S$Mod<-modS.Rdiff #add column with modularity results
+colnames(S)[1]  <- "Strength" #rename the first column to represent mean strength
+head(S) #view first six rows of new data frame
+
+	#combine two data frame to be compare, in this case Sonso and Waibira
+SW<-rbind(S,W)
+
+	#calculate Cohen's D using "effsize"package
+binVar<-as.factor(SW$Group)#define the bin variable 
+scaleVar<-as.numeric(SW$Strength)#define the scale variable (values obtained from network measure calculations in this case mean strength)
+cohen.d(scaleVar~binVar)
+
+
+#####linear model testing relationship between individual Strength and subgroup membership in Waibira#####
+#Note: code for creating Waibira networks not included but is identical to the code included for Sonso above
+Wattributes$DEGREE.r <- rowSums(networkW)#calculate Strength of each individual and add to attribute table
+Wattributes$Group<-c("B","A","B","A","B","B","A","A","A","B","B","B","B","B","A","A","B","B","B","A","A","B") #assign group membership to each individual based on Louvain's clustering algorithm (above) and add to attribute table
+Wattributes$Colour<-c("blue","red","blue","red","blue","blue","red","red","red","blue","blue","blue","blue","blue","red","red","blue","blue","blue","red","red","blue") #assign colour to each individual based on their subgroup membership and add to attribute table
+
+	#calculate the coefficietn from the linear model:  'the effect of subgroup membership on Strength'
+coef.r <- coefficients(lm(DEGREE.r~Group,data=Wattributes))[2]
+
+	#see model results 
+summary(lm(DEGREE.r~Group,data=Wattributes))
+
+	# Calculate strength distribution for each random network
+deg_rand <- apply(randomW,1,function(x) { rowSums(x)})
+
+	# Get coefficients for each randomisation
+coefs <- apply(deg_rand,2,function(x) { coefficients(lm(x~Group,data=Wattributes))[2] })
+
+# P values: check if the observed coefficient is significantly more or less than expected by chance
+sum(coef.r<coefs)/1000
+sum(coef.r>coefs)/1000
+
+#####Waibira Range calculations of range overlap between Waibira_A and Waibira_B#####
+#use either All_ranging_CBlock.csv or FirstDaily_Ranging_CBlock.csv depending on whether calculating only with first daily observation or all observations
+wbr<-read.csv(file.choose(),header = TRUE) 
+head(wbr)
+
+#subset full dataset for the parties in which each individual is present
+abo<-subset(wbr,wbr$ABO=="1")
+alf<-subset(wbr,wbr$ALF=="1")
+ard<-subset(wbr,wbr$ARD=="1")
+ben<-subset(wbr,wbr$BEN=="1")
+chn<-subset(wbr,wbr$CHN=="1")
+dau<-subset(wbr,wbr$DAU=="1")
+dou<-subset(wbr,wbr$DOU=="1")
+fid<-subset(wbr,wbr$FID=="1")
+ger<-subset(wbr,wbr$GER=="1")
+ila<-subset(wbr,wbr$ILA=="1")
+kas<-subset(wbr,wbr$KAS=="1")
+kev<-subset(wbr,wbr$KEV=="1")
+laf<-subset(wbr,wbr$LAF=="1")
+lan<-subset(wbr,wbr$LAN=="1")
+mac<-subset(wbr,wbr$MAC=="1")
+mas<-subset(wbr,wbr$MAS=="1")
+mor<-subset(wbr,wbr$MOR=="1")
+mug<-subset(wbr,wbr$MUG=="1")
+sam<-subset(wbr,wbr$SAM=="1")
+tal<-subset(wbr,wbr$TAL=="1")
+trs<-subset(wbr,wbr$TRS=="1")
+urs<-subset(wbr,wbr$URS=="1")
+
+##add a column includig the ID of the individual 
+abo$ID<-ifelse(abo$ABO=="1","ABO")
+alf$ID<-ifelse(alf$ALF=="1","ALF")
+ard$ID<-ifelse(ard$ARD=="1","ARD")
+ben$ID<-ifelse(ben$BEN=="1","BEN")
+chn$ID<-ifelse(chn$CHN=="1","CHN")
+dau$ID<-ifelse(dau$DAU=="1","DAU")
+dou$ID<-ifelse(dou$DOU=="1","DOU")
+fid$ID<-ifelse(fid$FID=="1","FID")
+ger$ID<-ifelse(ger$GER=="1","GER")
+ila$ID<-ifelse(ila$ILA=="1","ILA")
+kas$ID<-ifelse(kas$KAS=="1","KAS")
+kev$ID<-ifelse(kev$KEV=="1","KEV")
+laf$ID<-ifelse(laf$LAF=="1","LAF")
+lan$ID<-ifelse(lan$LAN=="1","LAN")
+mac$ID<-ifelse(mac$MAC=="1","MAC")
+mas$ID<-ifelse(mas$MAS=="1","MAS")
+mor$ID<-ifelse(mor$MOR=="1","MOR")
+mug$ID<-ifelse(mug$MUG=="1","MUG")
+sam$ID<-ifelse(sam$SAM=="1","SAM")
+tal$ID<-ifelse(tal$TAL=="1","TAL")
+trs$ID<-ifelse(trs$TRS=="1","TRS")
+urs$ID<-ifelse(urs$URS=="1","URS")
+
+#create dataframe with everyone's ranging patterns by individual instead of by party
+all<-rbind(abo,alf,ard,ben,chn,dau,dou,fid,ger,ila,kas,kev,laf,lan,mac,mas,mor,mug,sam,trs,tal,urs)
+head(all)
+
+#create smaller data frame from the one above in which only the lat, lon and ID columns are present
+comp<-cbind.data.frame(all$lat,all$lon,all$ID)
+colnames(comp) <- c("lat", "lon","ID")
+head(comp)
+
+#create file of coordinates only
+xy<-cbind(comp$lat,comp$lon)
+xy<-SpatialPoints(xy)
+#create spatial point data frame
+spdf <- SpatialPointsDataFrame(coords = xy, data = comp,bbox=NULL,match.ID=TRUE,
+                               proj4string = CRS(as.character(NA)))
+head(spdf)
+spdf@data <- spdf@data %>% 
+  dplyr::select(3) #keeps column 2 in the spdf object.
+
+
+#kernel overlap function: creates matrix reporting the percentage of home range over lap between each dyad. This function was ran on each of the kernals reported (here 95% of individual home range)
+k<-kerneloverlap(spdf[,1],method = "HR",percent = 95,conditional = FALSE)
+k#this is the matrix, we export it from R and rearrange this matrix in excel to include 5 columns. The first two columns include the ID of each individual in the dyad, the 3rd includeds the percent overlap between their home ranges, the 4th and 5th column indicate the subgroup each individual belongs to and the final column indicates if the two individuals are in the same or different subgroups 
+
+#t.test comparing overlap between dyads in the same or different subgroups: this t-test was repeated for each kernal measures
+#use any/all of overlap csvs separately 
+#(e.g. All_overlap5csv = overlap of 5% core area between males with all observations included/ FirstDaily_overlap5.csv = same but with just first daily observaton)
+t.test(perc$K~perc$match)
+
+#####Waibira subgroup membership across study period (year by year)
+wgbi15<-as.matrix (read.csv(file.choose(),header = FALSE))#upload gbi matrix for each year as for mantel test
+wgbi16<-as.matrix (read.csv(file.choose(),header = FALSE))
+wgbi17<-as.matrix (read.csv(file.choose(),header = FALSE))
+wgbi18<-as.matrix (read.csv(file.choose(),header = FALSE))
+
+wgbi2015<-t(wgbi2015)#transpose for correct format
+wgbi2016<-t(wgbi2016)
+wgbi2017<-t(wgbi2017)
+wgbi2018<-t(wgbi2018)
+
+Wattributes<-read.csv(file.choose(),header = TRUE)#add Wattributes.csv and then change column names for ID for each year
+colnames(wgbi2015)<-Wattributes$ID
+colnames(wgbi2016)<-Wattributes$ID
+colnames(wgbi2017)<-Wattributes$ID
+colnames(wgbi2018)<-Wattributes$ID
+
+networkw2015<- get_network(association_data=wgbi2015, data_format="GBI")#create network object
+networkw2016<- get_network(association_data=wgbi2016, data_format="GBI")
+networkw2017<- get_network(association_data=wgbi2017, data_format="GBI")
+networkw2018<- get_network(association_data=wgbi2018, data_format="GBI")
+
+netw2015<-graph.adjacency(networkw2015, mode="undirected", weighted=TRUE, diag=FALSE)#get graph object
+netw2016<-graph.adjacency(networkw2016, mode="undirected", weighted=TRUE, diag=FALSE)
+netw2017<-graph.adjacency(networkw2017, mode="undirected", weighted=TRUE, diag=FALSE)
+netw2018<-graph.adjacency(networkw2018, mode="undirected", weighted=TRUE, diag=FALSE)
+
+clusw15<- cluster_louvain(netw2015)#identify subgroup membership
+membership(clusw15)#see membership in each subgroup
+clusw16<- cluster_louvain(netw2016)
+membership(clusw16)
+clusw17<- cluster_louvain(netw2017)
+membership(clusw17)
+clusw18<- cluster_louvain(netw2018)
+membership(clusw18)
+
+#calculate mean strength for each subgroup: (all steps repeated for each year and/or each subgroup) we did this to understand which subgroup was the 'central' subgroup
+mems15<-as.data.frame(as.list(membership(clusw15)))#get data frame of subgroup membership
+mems15<-transpose(mems15)#transpose so that it is the same format at attributes table
+Wattributes$G15<-as.character(mems15$V1)#add column to attribute take with individual subgroup membership for this year
+
+str15<-as.data.frame(as.list(strength(netw2015)))#get individual strength for specific year
+str15<-transpose(str15)#transpose so that it is the same format at attributes table
+Wattributes$S15<-str15$V1#add column to attribute table with individual strength for this year
+
+mean(Wattributes$S15[Wattributes$G15=="1"])#calculate mean strength for group 1 in year 1 of study
+
+#Figure 1: Boxplot of age distribution in each community/ subgroup (uses ggplot2)
+att<-read.csv(file.choose(), header=TRUE, sep=",")# use WSattributes.csv
+geom_boxplot(outlier.colour="black", outlier.shape=16,#set plot aspects
+             outlier.size=2, notch=FALSE)
+
+p <- ggplot(att, aes(x=Group, y=Age_2015)) + #create plot
+  geom_boxplot()+
+  ylim(0,40)+
+  ylab("Age")
+
+p + stat_summary(fun.y=mean, geom="point", shape=20, size=4,colour="red")#add red points for average
+
+
+#Figure 2: Histogram of Waibira and Sonso network measures from null models and observed values
+par(mfrow=c(2,3))
+hist(random.St, breaks=1,col="grey", main = "A)", xlab = "Transitivity")
+par(xpd = TRUE)
+lines(x = c(obsSt,obsSt), y = c(0, par('usr')[4]), col="red")
+
+hist(random.Sstr, breaks=50,col="grey", main = "B)", xlab = "Mean Strength")
+par(xpd = TRUE)
+lines(x = c(obsSstr,obsSstr), y = c(0, par('usr')[4]), col="red")
+
+hist(random.modS, breaks=50,col="grey", main = "C)", xlab = "Modularity")
+par(xpd = TRUE)
+lines(x = c(obsmodS,obsmodS), y = c(0, par('usr')[4]), col="red")
+
+hist(random.Wt, breaks=1,col="grey", main = "D)", xlab = "Transitivity")
+par(xpd = TRUE)
+lines(x = c(obsWt,obsWt), y = c(0, par('usr')[4]), col="red")
+
+hist(random.Wstr, breaks=50,col="grey", main = "E)", xlab = "Mean Strength")
+par(xpd = TRUE)
+lines(x = c(obsWstr,obsWstr), y = c(0, par('usr')[4]), col="red")
+
+hist(random.modW, breaks=50,col="grey", main = "F)", xlab = "Modularity")
+par(xpd = TRUE)
+lines(x = c(obsmodW,obsmodW), y = c(0, par('usr')[4]), col="red")
+
+#Figure 3: boxplot of dyadic association index for each community/subgroup
+
+edgesS<-get.data.frame(netS)#get dyadic association index from network object
+edgesS$Group<-"Sonso"#add column including group ID
+
+edgesW<-get.data.frame(netW)
+edgesW$Group<-"Waibira"
+
+edgesWA<-get.data.frame(netWA)
+edgesWA$Group<-"Waibira_A"
+
+edgesWB<-get.data.frame(netWB)
+edgesWB$Group<-"Waibira_B"
+
+DAI<-rbind(edgesS,edgesW,edgesWA,edgesWB)#combine the DAI for all groups
+
+
+geom_boxplot(outlier.colour="black", outlier.shape=16,#set plot aspects
+             outlier.size=2, notch=FALSE)
+
+p <- ggplot(DAI, aes(x=Group, y=weight)) + #create plot
+  geom_boxplot()+
+  ylim(0,0.55)+
+  ylab("Dyadic Association")
+
+p + stat_summary(fun.y=mean, geom="point", shape=20, size=4,colour="red")#add red points for average
+
+#Figure 4: Sociograms for Waibira and Sonso
+#Waibira
+wclp <- cluster_louvain(netW)#determine subgroup membership
+
+cut.off.W <-(mean(E(netW)$weight))#set cut off to include edges only above average weight
+netW.aa <- delete_edges(netW, E(netW)[weight<cut.off.W])#delete edges below average from graph
+
+V(netW.aa)$community <- wclp$membership#set group membership
+V(netW.aa)$shape <- c("circle", "square")[V(netW.aa)$community]#set group membership by shape
+
+#set plot space
+par(mfrow=c(1,2),mar=c(1,1,1,1))
+#plot Waibira sociogram
+plot(netW.aa, vertex.color="dimgrey",#plot sociograph
+     edge.width=E(netW)$weight*7,edge.color="grey"(alpha=0.30, level=0.25),vertex.size=(strength(netW)*3),
+     vertex.label=NA, vertex.frame.color="white")
+title("Waibira", cex.main=1)
+     
+#Sonso
+cut.off.S <-(mean(E(netS)$weight))
+netS.aa <- delete_edges(netS, E(netS)[weight<cut.off.S])
+
+#plot Sonso sociogram
+plot(netS.aa, vertex.color="dimgrey",#plot sociograph
+     edge.width=E(netS)$weight*7,edge.color="grey"(alpha=0.30, level=0.25),vertex.size=(strength(netS)*3),
+     vertex.label=NA, vertex.frame.color="white")
+title("Sonso", cex.main=1)
+
+
+#Figure 5: model results exploring relationship between subgroup membership and individual strength in Wiabira
+# Plot results for model (boxplot) and histogram
+par(mfrow=c(1,2),cex.lab=1.5,mar=c(4,4,1,1), tck=0.01, mgp=c(2.5,0.5,0),las=1)
+
+# Plot original boxplot
+plot(Wattributes$DEGREE.r~factor(Wattributes$Group),xlab="Group",ylab="Strength (original)",cex.axis=1, tck=0.01)
+text(par('usr')[1] - (par('usr')[2]-par('usr')[1])/5,par('usr')[4] - (par('usr')[4]-par('usr')[3])/15, "A", cex=1.5) 
+
+# Plot resulting distribution histogram
+a <- hist(coefs,xlim=c(min(coefs),max(coefs)),col="black",xlab="Coefficient value",ylab="Frequency",breaks=100,cex.axis=1,main="", tck=0.01)
+segments(coef.r,0,coef.r,max(a$counts),col="red",lwd=3)
+box()
+text(par('usr')[1] - (par('usr')[2]-par('usr')[1])/5,par('usr')[4] - (par('usr')[4]-par('usr')[3])/15, "B", cex=1.5) 
+
+#Figure 6: heat maps
+#NOTE: this was run for each goup independently and also once for data including all observations (in supplementaries) and once for data with only the first observation of each day
+library(dplyr)
+library(adehabitatHR)
+library(gplots)
+
+#upload - GAP_matrix_all.csv (Waibira_A matrix for all observations per block)
+#upload - GBP_matrix_all.csv (Waibira_B matrix for all observations per block)
+#upload - GAP_matrix_first.csv (Waibira_A matrix for first daily observations per block)
+#upload - GBP_matrix_first.csv (Waibira_B matrix for first daily observations per block)
+gapa<-read.csv(file.choose(),check.names = FALSE,sep = ",",comment.char = "#")
+rnames<-gapa[,1]
+mat_gapa<-data.matrix(gapa[,2:ncol(gapa)])
+rownames(mat_gapa)<-rnames
+
+my_pallete1<-colorRampPalette(c("skyblue","yellow","tomato"))(n=299)
+
+par(mfrow=c(1,2))
+
+heatmap.2(mat_gapa,
+          main = "Waibira_A",
+          notecol="black",
+          density.info = "none",
+          trace = "none",
+          margins = c(12,9),
+          col=my_pallete1,
+          dendrogram="row",
+          srtCol=360,
+          Colv = "NA",
+          Rowv=FALSE)
+
+#Figure 7
+par(mfrow=c(2,2),mar(1,1,1,1))#create plot space to include 4 plots
+
+cut.off_w15 <-(mean(E(netw2015)$weight))#set cut off to include only edges with above average dyadic association
+netw15.aa <- delete_edges(netw2015, E(netw2015)[weight<cut.off_w15])#delete edges below average from plot object
+cut.off_w16 <-(mean(E(netw2016)$weight))
+netw16.aa <- delete_edges(netw2016, E(netw2016)[weight<cut.off_w16])
+cut.off_w17 <-(mean(E(netw2017)$weight))
+netw17.aa <- delete_edges(netw2017, E(netw2017)[weight<cut.off_w17])
+cut.off_w18 <-(mean(E(netw2018)$weight))
+netw18.aa <- delete_edges(netw2018, E(netw2018)[weight<cut.off_w18])
+
+
+
+V(netw2015)$community <- clusw15$membership#create object including individual by group
+V(netw2016)$community <- clusw16$membership
+V(netw2017)$community <- clusw17$membership
+V(netw2018)$community <- clusw18$membership
+
+#create a triangle vertex shape option
+mytriangle <- function(coords, v=NULL, params) {
+  vertex.color <- params("vertex", "color")
+  if (length(vertex.color) != 1 && !is.null(v)) {
+    vertex.color <- vertex.color[v]
+  }
+  vertex.size <- 1/200 * params("vertex", "size")
+  if (length(vertex.size) != 1 && !is.null(v)) {
+    vertex.size <- vertex.size[v]
+  }
+
+  symbols(x=coords[,1], y=coords[,2], bg=vertex.color,
+          stars=cbind(vertex.size, vertex.size, vertex.size),
+          add=TRUE, inches=FALSE)
+}
+
+add_shape("triangle",
+                 plot=mytriangle)
+
+
+#membership each year by shape
+V(netw15.aa)$shape <- c("circle", "square", "triangle")[V(netw2015)$community ]
+V(netw16.aa)$shape <- c("square", "circle", "triangle")[V(netw2016)$community]
+V(netw17.aa)$shape <- c("circle", "triangle","square")[V(netw2017)$community]
+V(netw18.aa)$shape <- c("circle", "square", "triangle")[V(netw2018)$community]
+
+#plot all sociograms
+par(mfrow=c(2,2), mar=c(3, 3, 2, 0.5), mgp=c(2, 0.8, 0))
+
+plot(netw15.aa, vertex.color="dimgrey",#plot sociogram and repeat for each year
+     edge.width=E(netw2015)$weight*7,edge.color="grey"(alpha=0.3, level=0.3),vertex.size=(strength(netw2015)*3),vertex.shape=V(netw15.aa)$shape ,
+     vertex.label=NA, vertex.frame.color="white")
+title("A", cex.main=1.5)
+
+
+plot(netw16.aa, vertex.color="dimgrey",#plot sociogram and repeat for each year
+     edge.width=E(netw2016)$weight*7,edge.color="grey"(alpha=0.3, level=0.3),vertex.size=(strength(netw2016)*3),vertex.shape=V(netw16.aa)$shape ,
+     vertex.label=NA, vertex.frame.color="white")
+title("B", cex.main=1.5)
+
+
+plot(netw17.aa, vertex.color="dimgrey",#plot sociogram and repeat for each year
+     edge.width=E(netw2017)$weight*7,edge.color="grey"(alpha=0.3, level=0.3),vertex.size=(strength(netw2017)*3),vertex.shape=V(netw17.aa)$shape ,
+     vertex.label=NA, vertex.frame.color="white")
+title("C", cex.main=1.5)
+
+
+plot(netw18.aa, vertex.color="dimgrey",#plot sociogram and repeat for each year
+     edge.width=E(netw2018)$weight*7,edge.color="grey"(alpha=0.3, level=0.3),vertex.size=(strength(netw2018)*3),vertex.shape=V(netw18.aa)$shape ,
+     vertex.label=NA, vertex.frame.color="white")
+title("D", cex.main=1.5)
+     
+ #####supplementaty materials#####
+ 
+library(EloRating)  
+pgs<-read.csv(file.choose(),header = TRUE)#add Waibira_mm_pg.csv (dataset with male pant grunts)
+
+#create elo-rating seqence
+elo<-elo.seq(winner = pgs$Winner, loser = pgs$Loser, Date = pgs$Date,draw=NULL, presence = NULL,
+            startvalue = 1000, k=200, normprob = TRUE, init = "average",
+             intensity = NULL, iterate = 0, runcheck = FALSE, progressbar = FALSE)
+ #create object with individuals who are included in the study            
+m<-c("ABO", "ALF", "ARD","BEN","CHN","DAU","DOU","FID","GER", "ILA", "KAS", "KEV", "LAF", "LAN", "MAC", "MAS", "MOR", "MUG", "SAM", "TAL", "TRS", "URS" )
+#extract the elo-rating of the individuals included in the study
+extract_elo(elo, "2019-09-30",IDs = m)
+
+eloplot(elo, ids=m,from="start", to = "2019-09-30", color = TRUE )#get plot of rank progression 
